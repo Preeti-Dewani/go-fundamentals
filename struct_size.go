@@ -7,7 +7,7 @@ import (
 
 // Alignment for user defined types has a huge role
 // in memory allocation. As per CPU size(32/64) also called as
-// word size and type of variable size of struct varies.
+// word size and type of variable inside struct, size of struct varies.
 
 // ex1: Memory allocation map:
 // a = 1 byte
