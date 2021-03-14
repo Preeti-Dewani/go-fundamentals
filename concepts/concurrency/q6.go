@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -15,52 +15,55 @@ import (
 // message for each kind of exit. I.e If exited via Ctrl-C should print
 // "Caught interrupt" and in case of timeout should print "Goodbye! timeout"
 
-var wgQ6 sync.WaitGroup
+const spawnNo1 = 8
 
-func cpuBoundV2(n int, ticker *time.Ticker) {
+type Task struct {
+	closed chan struct{}
+	wg     sync.WaitGroup
+	ticker *time.Ticker
+}
+
+func (t *Task) Run() {
 	f, err := os.Open(os.DevNull)
 	if err != nil {
 		panic(err)
 	}
-
-	defer wgQ6.Done()
 	defer f.Close()
 	for {
 		select {
-		case <- ticker.C:
-			fmt.Println("Goodbye! timeout")
-			os.Exit(n)
-		default:
+		case <-t.closed:
+			return
+		case <-t.ticker.C:
 			fmt.Fprintf(f, ".")
 		}
 	}
 }
 
-func main(){
+func (t *Task) Stop() {
+	close(t.closed)
+	t.wg.Wait()
+}
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	timeTicker := time.NewTicker(5 * time.Second)
-
-	wgQ6.Add(1)
-	go func(){
-		for {
-			select {
-			case <-c:
-				fmt.Println("Caught interrupt")
-				timeTicker.Stop()
-				return
-			}
-		}
-	}()
-
-	for ix := 0; ix < 8; ix++ {
-		wgQ6.Add(1)
-		go cpuBoundV2(ix, timeTicker)
+func main() {
+	task := &Task{
+		closed: make(chan struct{}),
+		ticker: time.NewTicker(time.Second * 2),
 	}
 
-	time.Sleep(10 * time.Second)
-	timeTicker.Stop()
-	wgQ6.Wait()
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
+
+	for ix := 0; ix < spawnNo1; ix++ {
+		task.wg.Add(1)
+		go func() { defer task.wg.Done(); task.Run() }()
+	}
+
+	select {
+		case <-c:
+			log.Printf("Caught interrupt")
+			task.Stop()
+		case <-time.After(10 * time.Second):
+			log.Println("out of time :(")
+			task.Stop()
+	}
 }
